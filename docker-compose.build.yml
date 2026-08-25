@@ -1,0 +1,23 @@
+# Override that builds the image from a fork checkout instead of pulling it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# LLAMA_SRC in .env points at your checkout. The fork arrives as a BuildKit
+# named context, so nothing has to live inside the fork tree and the fork stays
+# clean for upstream PRs.
+#
+# Building from a working tree includes uncommitted changes — convenient while
+# developing, wrong for an image you intend to keep. For something reproducible
+# use `scripts/build.sh server --ref <sha>`, which builds from a detached clone.
+services:
+  server:
+    image: ${IMAGE:-agention-llama:server}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: server
+      additional_contexts:
+        llamasrc: ${LLAMA_SRC:-../llama.cpp}
+      args:
+        LLAMA_COMMIT: ${LLAMA_COMMIT:-unknown}
+        LLAMA_BRANCH: ${LLAMA_BRANCH:-unknown}

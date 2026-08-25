@@ -1,0 +1,53 @@
+# agention-llama — llama-server (with the web UI) on the Vulkan fork.
+#
+#   cp .env.example .env      # point MODELS_DIR at your GGUFs
+#   docker compose up -d      # pulls the published image
+#   open http://localhost:8080
+#
+# This file pulls a prebuilt image and never builds. To build from your own fork
+# checkout instead, add the override:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# The two are kept apart because they answer different questions. Pulling is
+# what you want when you are running this; building is what you want when you
+# are changing the fork.
+services:
+  server:
+    image: ${IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:server}
+    container_name: agention-llama
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    devices:
+      - /dev/dri:/dev/dri
+    # The host's render/video gids. Read them once with:
+    #   getent group render | cut -d: -f3
+    # and set RENDER_GID / VIDEO_GID in .env — they are not the same everywhere.
+    group_add:
+      - "${RENDER_GID:-render}"
+      - "${VIDEO_GID:-video}"
+    # Relative paths in a models.ini resolve against this, and it is where the
+    # host's models.ini lives if you keep one next to your GGUFs.
+    working_dir: /models
+    volumes:
+      - ${MODELS_DIR:-~/models}:/models
+      # Model config. Defaults to global settings only, applied to every model
+      # the router discovers in /models. Point MODELS_INI at your own file for
+      # per-model control — see examples/models.ini.
+      - ${MODELS_INI:-./presets/globals.ini}:/etc/agention/models.ini:ro
+    environment:
+      LLAMA_ARG_MODELS_PRESET: /etc/agention/models.ini
+    env_file:
+      - path: ./presets/${PRESET:-router}.env
+        required: true
+    # Extra llama-server arguments, e.g. LLAMA_ARGS=-m /models/model.gguf
+    # Left empty, the server comes up in router mode over /models and the web UI
+    # picks the model.
+    command: ${LLAMA_ARGS:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      start_period: 300s
+      interval: 30s
+      timeout: 5s
+      retries: 3

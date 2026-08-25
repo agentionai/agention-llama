@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# agention-llama — one command for the ROCmFPx + DFlash2 llama.cpp fork.
+#
+#   agention-llama doctor                  is this machine set up to be fast?
+#   agention-llama recipes                 list the configurations
+#   agention-llama run <recipe> [-- args]  serve with one of them
+#   agention-llama serve [--models-ini F]  router mode over your models directory
+#   agention-llama cli|bench|quantize ...  any other binary
+#   agention-llama update                  pull a newer image / re-fetch binaries
+#   agention-llama version
+#
+# Two backends, one command. With Docker present it runs the published image;
+# without it, the binaries installed from the release tarball. AGENTION_BACKEND
+# forces the choice.
+set -euo pipefail
+
+# --------------------------------------------------------------------- locate
+# Installed as a symlink in ~/.local/bin, so resolve the link chain to find the
+# presets that ship next to this script.
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+    dir=$(cd -P "$(dirname "$self")" && pwd)
+    self=$(readlink "$self")
+    case "$self" in /*) ;; *) self="$dir/$self" ;; esac
+done
+ROOT=$(cd -P "$(dirname "$self")/.." && pwd)
+
+IMAGE="${IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:server}"
+CLI_IMAGE="${CLI_IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:cli}"
+NAME="${NAME:-agention-llama}"
+PORT="${PORT:-8080}"
+MODELS="${MODELS_DIR:-$HOME/models}"
+BACKEND="${AGENTION_BACKEND:-}"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    B=$(printf '\033[1m'); D=$(printf '\033[2m'); Z=$(printf '\033[0m')
+else
+    B=; D=; Z=
+fi
+
+die()  { printf 'agention-llama: %s\n' "$1" >&2; exit "${2:-1}"; }
+info() { printf '%s>>%s %s\n' "$D" "$Z" "$1" >&2; }
+
+# The repo's own .env, if the user cloned rather than curl'd. Never required.
+[ -f "$ROOT/.env" ] && ENVFILE_ROOT=("$ROOT/.env") || ENVFILE_ROOT=()
+
+# -------------------------------------------------------------------- backend
+have_docker() { command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; }
+
+# The tarball installs to /opt/agention-llama and symlinks into /usr/local/bin;
+# the curl installer puts a tree under ~/.local/share. Check both, plus PATH.
+native_bin() {
+    local name="$1" p
+    for p in "$ROOT/bin/$name" "$HOME/.local/share/agention-llama/$name" \
+             "/opt/agention-llama/$name"; do
+        [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+    done
+    command -v "$name" 2>/dev/null && return 0
+    return 1
+}
+
+pick_backend() {
+    [ -n "$BACKEND" ] && { printf '%s' "$BACKEND"; return; }
+    if have_docker; then printf 'docker'
+    elif native_bin llama-server >/dev/null; then printf 'native'
+    else die "no backend: install Docker, or the binaries from
+    https://github.com/LaurentZuijdwijk/llama.cpp/releases"
+    fi
+}
+
+# ------------------------------------------------------------------ gpu wiring
+# A container can only touch /dev/dri/renderD* if it is in the host's render
+# group, and that gid is not the same on every distro (990 here, 993 elsewhere).
+# Getting this wrong is the usual reason a GPU container silently runs on CPU,
+# which is why it is read rather than hardcoded.
+gpu_args() {
+    local g gid
+    printf '%s\n' --device /dev/dri
+    for g in render video; do
+        gid=$(getent group "$g" 2>/dev/null | cut -d: -f3 || true)
+        [ -n "$gid" ] && printf '%s\n%s\n' --group-add "$gid"
+    done
+}
+
+# ------------------------------------------------------------------- recipes
+recipe_file() {
+    local f="$ROOT/presets/$1.env"
+    [ -f "$f" ] || die "no such recipe: $1 (try: agention-llama recipes)"
+    printf '%s' "$f"
+}
+
+cmd_recipes() {
+    printf '%srecipes%s  (see %s/RECIPES.md for the measured numbers)\n\n' "$B" "$Z" "$ROOT"
+    local f n first
+    for f in "$ROOT"/presets/*.env; do
+        n=$(basename "$f" .env)
+        # The first comment line of each preset is written to be its summary.
+        first=$(sed -n '1s/^# *//p' "$f")
+        printf '  %-14s %s\n' "$n" "$first"
+    done
+    printf '\n  %s\n' "agention-llama run <recipe> [-- llama-server args]"
+}
+
+# ---------------------------------------------------------------------- serve
+# `run` is single-model: the preset owns the configuration and no INI is
+# mounted. `serve` is router mode: the INI owns it and the preset is empty.
+# Keeping those apart is the point -- environment variables set on the router
+# are inherited by every model instance and silently compete with the same keys
+# in the INI.
+serve_docker() {
+    local envfiles=("$@"); shift $#
+    local args=()
+    mapfile -t args < <(gpu_args)
+    local ef=()
+    local f
+    for f in "${ENVFILE_ROOT[@]+"${ENVFILE_ROOT[@]}"}" "${envfiles[@]+"${envfiles[@]}"}"; do
+        ef+=(--env-file "$f")
+    done
+    mkdir -p "$MODELS"
+    info "image   $IMAGE"
+    info "models  $MODELS -> /models"
+    info "web ui  http://localhost:$PORT"
+    exec docker run --rm -it --name "$NAME" \
+        "${args[@]}" \
+        -v "$MODELS:/models" -w /models \
+        -p "$PORT:8080" \
+        "${ef[@]+"${ef[@]}"}" \
+        "${INI_ARGS[@]+"${INI_ARGS[@]}"}" \
+        "$IMAGE" "${PASSTHRU[@]+"${PASSTHRU[@]}"}"
+}
+
+serve_native() {
+    local f bin
+    bin=$(native_bin llama-server) || die "llama-server not found; install the release tarball"
+    # Preset files are plain KEY=value, so sourcing them is exactly what the
+    # container's --env-file does.
+    for f in "$@"; do
+        set -a; . "$f"; set +a
+    done
+    export LLAMA_ARG_HOST="${LLAMA_ARG_HOST:-0.0.0.0}" LLAMA_ARG_PORT="$PORT"
+    export LLAMA_CACHE="${LLAMA_CACHE:-$MODELS/.cache}"
+    mkdir -p "$MODELS"
+    info "binary  $bin"
+    info "web ui  http://localhost:$PORT"
+    exec "$bin" "${PASSTHRU[@]+"${PASSTHRU[@]}"}"
+}
+
+# ------------------------------------------------------------------ arg parse
+PASSTHRU=()
+INI_ARGS=()
+MODELS_INI="${MODELS_INI:-}"
+
+parse_common() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --models)     MODELS="$2"; shift 2 ;;
+            --models-ini) MODELS_INI="$2"; shift 2 ;;
+            --port)       PORT="$2"; shift 2 ;;
+            --name)       NAME="$2"; shift 2 ;;
+            --image)      IMAGE="$2"; shift 2 ;;
+            --backend)    BACKEND="$2"; shift 2 ;;
+            --)           shift; PASSTHRU+=("$@"); return ;;
+            *)            PASSTHRU+=("$1"); shift ;;
+        esac
+    done
+}
+
+mount_ini() {
+    [ -n "$MODELS_INI" ] || MODELS_INI="$ROOT/presets/globals.ini"
+    [ -f "$MODELS_INI" ] || die "no such models ini: $MODELS_INI"
+    local abs
+    abs="$(cd "$(dirname "$MODELS_INI")" && pwd)/$(basename "$MODELS_INI")"
+    if [ "$(pick_backend)" = docker ]; then
+        INI_ARGS=(-v "$abs:/etc/agention/models.ini:ro"
+                  -e "LLAMA_ARG_MODELS_PRESET=/etc/agention/models.ini")
+    else
+        export LLAMA_ARG_MODELS_PRESET="$abs"
+    fi
+    info "ini     $MODELS_INI"
+}
+
+# --------------------------------------------------------------------- commands
+cmd_run() {
+    local recipe="${1:-}"; shift || true
+    [ -n "$recipe" ] || die "usage: agention-llama run <recipe> [-- llama-server args]"
+    local f; f=$(recipe_file "$recipe")
+    parse_common "$@"
+    info "recipe  $recipe"
+    case "$(pick_backend)" in
+        docker) serve_docker "$f" ;;
+        native) serve_native "$f" ;;
+    esac
+}
+
+cmd_serve() {
+    parse_common "$@"
+    mount_ini
+    info "recipe  router (the INI owns the configuration)"
+    case "$(pick_backend)" in
+        docker) serve_docker "$ROOT/presets/router.env" ;;
+        native) serve_native "$ROOT/presets/router.env" ;;
+    esac
+}
+
+# cli / bench / quantize. `llama` is the unified launcher, so `cli` is a
+# subcommand of it rather than a separate binary.
+cmd_exec() {
+    local sub="$1"; shift
+    local recipe="" f=""
+    local rest=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --recipe) recipe="$2"; shift 2 ;;
+            --models) MODELS="$2"; shift 2 ;;
+            --backend) BACKEND="$2"; shift 2 ;;
+            *) rest+=("$1"); shift ;;
+        esac
+    done
+    [ -n "$recipe" ] && f=$(recipe_file "$recipe")
+
+    case "$(pick_backend)" in
+        docker)
+            local args=(); mapfile -t args < <(gpu_args)
+            local ef=(); local e
+            for e in "${ENVFILE_ROOT[@]+"${ENVFILE_ROOT[@]}"}" ${f:+"$f"}; do
+                ef+=(--env-file "$e")
+            done
+            local entry=()
+            case "$sub" in
+                cli) set -- cli "${rest[@]+"${rest[@]}"}" ;;
+                *)   entry=(-e "AGENTION_BINARY=/app/llama-$sub")
+                     set -- "${rest[@]+"${rest[@]}"}" ;;
+            esac
+            exec docker run --rm -it "${args[@]}" \
+                -v "$MODELS:/models" \
+                "${ef[@]+"${ef[@]}"}" "${entry[@]+"${entry[@]}"}" \
+                "$CLI_IMAGE" "$@"
+            ;;
+        native)
+            local bin
+            if [ "$sub" = cli ]; then
+                bin=$(native_bin llama) || die "llama not found"
+                set -- cli "${rest[@]+"${rest[@]}"}"
+            else
+                bin=$(native_bin "llama-$sub") || die "llama-$sub not found"
+                set -- "${rest[@]+"${rest[@]}"}"
+            fi
+            [ -n "$f" ] && { set -a; . "$f"; set +a; }
+            exec "$bin" "$@"
+            ;;
+    esac
+}
+
+cmd_doctor() {
+    if [ -x "$ROOT/scripts/doctor.sh" ]; then
+        exec "$ROOT/scripts/doctor.sh" "$@"
+    elif d=$(native_bin doctor.sh); then
+        exec "$d" "$@"
+    else
+        die "doctor.sh not found next to this script"
+    fi
+}
+
+cmd_update() {
+    case "$(pick_backend)" in
+        docker)
+            info "pulling $IMAGE"
+            docker pull "$IMAGE"
+            docker pull "$CLI_IMAGE" || true
+            ;;
+        native)
+            die "native backend: re-run install.sh from the newest release tarball
+    https://github.com/LaurentZuijdwijk/llama.cpp/releases"
+            ;;
+    esac
+    # A clone can also move forward; a curl install is a clone underneath.
+    [ -d "$ROOT/.git" ] && { info "updating recipes"; git -C "$ROOT" pull --ff-only || true; }
+}
+
+cmd_version() {
+    printf 'agention-llama (packaging) %s\n' "$(git -C "$ROOT" describe --tags --always 2>/dev/null || echo unknown)"
+    printf 'backend: %s\n' "$(pick_backend)"
+    case "$(pick_backend)" in
+        docker) docker run --rm --entrypoint cat "$IMAGE" /app/BUILD_INFO 2>/dev/null || echo "image not pulled yet" ;;
+        native) native_bin llama >/dev/null && "$(native_bin llama)" --version 2>&1 | head -3 ;;
+    esac
+}
+
+# The header comment of this file is the help text, up to the first line of code.
+usage() { sed -n '2,/^[^#]/p' "$self" | sed '$d; s/^# \{0,1\}//'; }
+
+case "${1:-help}" in
+    doctor)   shift; cmd_doctor "$@" ;;
+    recipes)  shift; cmd_recipes ;;
+    run)      shift; cmd_run "$@" ;;
+    serve)    shift; cmd_serve "$@" ;;
+    cli|bench|quantize|perplexity) sub="$1"; shift; cmd_exec "$sub" "$@" ;;
+    update)   shift; cmd_update ;;
+    version)  shift; cmd_version ;;
+    help|-h|--help) usage ;;
+    *) printf 'unknown command: %s\n\n' "$1" >&2; usage >&2; exit 2 ;;
+esac

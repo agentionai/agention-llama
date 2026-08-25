@@ -1,0 +1,115 @@
+# Build the agention-llama images and push them to GHCR.
+#
+# This can only prove the images build. No hosted runner has a Radeon 8060S, so
+# CI can never prove they are fast — that is what scripts/doctor.sh and the
+# draft-acceptance line are for, on your own machine.
+name: images
+
+on:
+  workflow_dispatch:
+    inputs:
+      fork_ref:
+        description: 'Ref of LaurentZuijdwijk/llama.cpp to build (branch, tag or SHA)'
+        required: true
+        default: master
+      push:
+        description: 'Push to GHCR, not only build'
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags: ['v*']
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercase: GHCR rejects uppercase path components, and the owner is not.
+  IMAGE_NAME: ghcr.io/laurentzuijdwijk/agention-llama
+  FORK_REPO: LaurentZuijdwijk/llama.cpp
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [server, cli]
+
+    steps:
+      - name: Checkout packaging
+        uses: actions/checkout@v6
+
+      # The Dockerfile takes the fork as a BuildKit named context rather than as
+      # the build context, which is what keeps this repo outside the fork tree.
+      # fetch-depth 0 because the build stage reads the build number and commit
+      # out of .git.
+      - name: Checkout fork
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.FORK_REPO }}
+          ref: ${{ inputs.fork_ref || 'master' }}
+          path: .llamasrc
+          fetch-depth: 0
+
+      # A Vulkan build of the whole tree plus the node UI does not fit
+      # comfortably in a hosted runner's default free space.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          df -h /
+
+      - name: Fork provenance
+        id: fork
+        run: |
+          cd .llamasrc
+          echo "commit=$(git rev-parse --short HEAD)"      >> "$GITHUB_OUTPUT"
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> "$GITHUB_OUTPUT"
+          echo "number=$(git rev-list --count HEAD)"       >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"       >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: ${{ inputs.push != false }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same two tags scripts/build.sh produces locally, so the rollback story in
+      # the README ("name the old tag") holds for published images too.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ matrix.target }}
+          build-contexts: llamasrc=.llamasrc
+          push: ${{ inputs.push != false }}
+          load: ${{ inputs.push == false }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ matrix.target }}
+            ${{ env.IMAGE_NAME }}:${{ matrix.target }}-${{ steps.fork.outputs.commit }}
+          build-args: |
+            APP_VERSION=${{ steps.fork.outputs.number }}
+            LLAMA_COMMIT=${{ steps.fork.outputs.commit }}
+            LLAMA_BRANCH=${{ steps.fork.outputs.branch }}
+            BUILD_DATE=${{ steps.fork.outputs.date }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+
+      # The image starts on CPU when there is no Vulkan ICD (GGML_BACKEND_DL),
+      # so this runs on a GPU-less runner and is a real smoke test of the layout.
+      - name: Smoke test
+        if: ${{ inputs.push == false }}
+        run: |
+          docker run --rm --entrypoint cat \
+            ${{ env.IMAGE_NAME }}:${{ matrix.target }} /app/BUILD_INFO
+          docker run --rm --entrypoint /app/doctor.sh \
+            ${{ env.IMAGE_NAME }}:${{ matrix.target }} --brief

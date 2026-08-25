@@ -1,0 +1,12 @@
+{
+  "models": {
+    "fast": {
+      "provider": "llamacpp",
+      "host": "http://localhost:8080"
+    },
+    "deep": {
+      "provider": "claude",
+      "model": "claude-opus-5"
+    }
+  }
+}
