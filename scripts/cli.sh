@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Interactive `llama cli` in the container, same GPU wiring as server.sh.
+# Lower-level than `agention-llama cli`; that is what most people want.
 #
 #   scripts/cli.sh -m /models/qwen3.8-27b.gguf -ngl 99
-#   scripts/cli.sh --preset dflash-short -m /models/qwen3.8-27b.gguf
+#   scripts/cli.sh --preset dflash-fp4 -m /models/qwen3.8-27b.gguf
 #
 # Any other binary in the image:
 #   BINARY=/app/llama-bench scripts/cli.sh -m /models/model.gguf

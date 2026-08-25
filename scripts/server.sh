@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Run llama-server in the agention-llama container with the GPU wired up.
+# Lower-level than `agention-llama run`; that is what most people want.
 #
 #   scripts/server.sh                                   # uses .env / defaults
 #   scripts/server.sh --preset mtp-long
