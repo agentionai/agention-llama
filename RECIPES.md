@@ -9,15 +9,42 @@ Every number here was measured on a single Radeon 8060S (Strix Halo APU). Other
 hardware gets the correctness fixes and the upstreamable wins; the tuning was
 not measured there.
 
-| recipe | for | needs | measured |
+| recipe | for | model | measured |
 |---|---|---|---|
 | [`plain`](#plain) | the baseline, and A/B comparisons | anything | 14.0 t/s |
-| [`dflash-fp4`](#dflash-fp4) | agents, structured output — the headline | Qwen3.8-27B FP4 + FP4 sidecar | **65.6 t/s, 4.7×** |
-| [`dflash-q8`](#dflash-q8) | the same, on a stock K-quant target | any Qwen3.8-27B + Q8_0 sidecar | 48.5 t/s |
-| [`mtp-long`](#mtp-long) | long context, any task, no sidecar | a model with an MTP head | 36.1 t/s at 31k |
-| [`ornith-mtp`](#ornith-mtp) | long documents, fastest prefill | Ornith-1.5-35B-A3B (MoE) | **1648 t/s pp2048** |
-| [`marshall`](#marshall) | a coding agent's fast tier | as `dflash-fp4` | as `dflash-fp4` |
+| [`dflash-fp4`](#dflash-fp4) | agents, structured output — the headline | **Qwen3.8-27B** ROCmFP4-FAST + FP4 sidecar | **65.6 t/s, 4.7×** |
+| [`dflash-q8`](#dflash-q8) | the same, on a stock K-quant target | **Qwen3.8-27B** (any quant) + Q8_0 sidecar | 48.5 t/s |
+| [`mtp-long`](#mtp-long) | long context, any task, no sidecar | **Qwen3.8-27B** ROCmFP4-FAST, or any model with an MTP head | 36.1 t/s at 31k |
+| [`ornith-mtp`](#ornith-mtp) | long documents, fastest prefill | **Ornith-1.5-35B-A3B** Q4_K_M | **1648 t/s pp2048** |
+| [`marshall`](#marshall) | a coding agent's fast tier | **Qwen3.8-27B** ROCmFP4-FAST + FP4 sidecar | as `dflash-fp4` |
 | [`router`](#router) | serving a whole directory of models | anything | — |
+
+## The models
+
+Two model families cover every recipe here. Both are downloaded on first run by
+`-hf`, into your models directory — you do not have to fetch them by hand.
+
+**Qwen3.8-27B** — dense, and the target for every generation recipe. It carries
+an MTP head, so it works with `mtp-long` too.
+
+| role | Hugging Face repo | notes |
+|---|---|---|
+| target, FP4 | `julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST` | 13.55 GiB. Needs this fork — mainline cannot load it |
+| target, stock | any Qwen3.8-27B K-quant (the fork's benchmarks used unsloth's `UD-Q4_K_XL`) | for `dflash-q8`, if you would rather not use a ROCmFP4 conversion |
+| DFlash2 sidecar, FP4 | `agentionai/Qwen3.8-27B-DFlash2-ROCmFP4-FAST-GGUF` | pairs with the FP4 target; the 65.6 t/s figure |
+| DFlash2 sidecar, Q8_0 | `z-lab/Qwen3.8-27B-DFlash2-GGUF:Q8_0` | pairs with any Qwen3.8-27B target; better on prose |
+
+**Ornith-1.5-35B-A3B** — delta-net MoE, and the prefill recipe. No sidecar: it
+drafts against its own MTP head.
+
+| role | Hugging Face repo |
+|---|---|
+| target | `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M` |
+
+A DFlash2 sidecar is **paired with a specific target**. The FP4 sidecar above is
+trained against Qwen3.8-27B and is useless against anything else — it will draft
+tokens the target rejects and you pay the full draft cost for nothing. There is
+no error message for this; see [Did it actually engage?](#did-it-actually-engage).
 
 Run one:
 
@@ -112,14 +139,20 @@ multiplies effective bandwidth instead of competing for it.
 **For:** agents, tool calls, JSON, code — anything with predictable structure.
 This is the fork's headline and its best case.
 
-**Needs:** a **Qwen3.8-27B** target. The sidecar is trained against it.
+**Needs:** **Qwen3.8-27B**, specifically:
+
+| | |
+|---|---|
+| target | `julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST` (13.55 GiB) |
+| sidecar | `agentionai/Qwen3.8-27B-DFlash2-ROCmFP4-FAST-GGUF` |
 
 ```bash
 agention-llama run dflash-fp4 -- -hf julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST
 ```
 
-The sidecar (`agentionai/Qwen3.8-27B-DFlash2-ROCmFP4-FAST-GGUF`) downloads on
-first run.
+The sidecar is named in the preset and downloads on first run; only the target
+goes on the command line. The FP4 target needs this fork — mainline cannot load
+a ROCmFPx model at all.
 
 **Measured**, greedy, 300 tokens, structured output:
 
@@ -152,10 +185,15 @@ rejects, and you pay the full draft cost for nothing.
 **For:** the same workload as `dflash-fp4`, when your target is a stock K-quant
 rather than a ROCmFP4 conversion. Nothing here needs the fork's quant types.
 
-**Needs:** any Qwen3.8-27B target.
+**Needs:** **Qwen3.8-27B** in any quantisation:
+
+| | |
+|---|---|
+| target | any Qwen3.8-27B K-quant (the fork's benchmarks used unsloth's `UD-Q4_K_XL`) |
+| sidecar | `z-lab/Qwen3.8-27B-DFlash2-GGUF:Q8_0` |
 
 ```bash
-agention-llama run dflash-q8 -- -m /models/Qwen3.8-27B-Q4_K_M.gguf
+agention-llama run dflash-q8 -- -m /models/Qwen3.8-27B-UD-Q4_K_XL.gguf
 ```
 
 **Measured**, everyday power profile, greedy, 300 tokens:
@@ -183,13 +221,17 @@ for mixed workloads rather than tool-call-shaped ones, prefer this.
 
 **For:** long context, any task, without downloading a second model.
 
-**Needs:** a model with an **MTP / nextn head**. The draft context is built from
-the target itself, so a model without one cannot start in this mode — it fails
-loudly rather than falling back.
+**Needs:** a model with an **MTP / nextn head**, and no sidecar.
+**Qwen3.8-27B** has one, so the same target as `dflash-fp4` works here:
 
 ```bash
-agention-llama run mtp-long -- -m /models/a-model-with-an-MTP-head.gguf
+agention-llama run mtp-long -- -hf julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST
 ```
+
+Ornith-1.5-35B-A3B has one too — see [`ornith-mtp`](#ornith-mtp) for the
+settings that model wants instead. A model *without* an MTP head cannot start in
+this mode: the draft context is built from the target itself, so it fails loudly
+rather than falling back.
 
 **Measured** at ~31k tokens of real C source:
 
@@ -216,7 +258,8 @@ diverge: later nextn layers are less accurate while draft cost stays linear in
 
 **For:** long documents, RAG, bulk summarisation — anything prefill-dominated.
 
-**Needs:** Ornith-1.5-35B-A3B, or another delta-net MoE.
+**Needs:** **Ornith-1.5-35B-A3B** — `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M`,
+or another delta-net MoE. No sidecar; it drafts against its own MTP head.
 
 ```bash
 agention-llama run ornith-mtp -- -hf ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M
@@ -255,7 +298,9 @@ is prefill. Run the MoE for prefill, the dense 27B for generation.
 **For:** the `fast` tier of [marshall](https://github.com/LaurentZuijdwijk/agention-marshall),
 or any coding agent with a two-tier model setup.
 
-**Needs:** as `dflash-fp4`.
+**Needs:** the same two models as [`dflash-fp4`](#dflash-fp4) — the
+`julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST` target and the
+`agentionai/Qwen3.8-27B-DFlash2-ROCmFP4-FAST-GGUF` sidecar.
 
 ```bash
 agention-llama run marshall -- -hf julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST

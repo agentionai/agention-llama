@@ -21,9 +21,11 @@ upstreamable fixes stay easy to send upstream.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LaurentZuijdwijk/agention-llama/master/install.sh | sh
 
-agention-llama doctor                       # is this machine set up to be fast?
-agention-llama recipes                      # the configurations, one per use case
-agention-llama run dflash-fp4               # the 4.7x one
+agention-llama doctor      # is this machine set up to be fast?
+agention-llama recipes     # the configurations, one per use case
+
+# The 4.7x one. Downloads Qwen3.8-27B (13.55 GiB) and its DFlash2 sidecar.
+agention-llama run dflash-fp4 -- -hf julianmb/Qwen-3.8-27B-ROCmFP4-FAST-GGUF:FAST
 ```
 
 Then open **http://localhost:8080** — the web UI is built into the server image.
@@ -142,15 +144,20 @@ oldest glibc that still builds the tree.
 Seven configurations, one per situation — see **[RECIPES.md](RECIPES.md)** for
 the full treatment.
 
-| recipe | for | measured on Strix Halo |
-|---|---|---|
-| `plain` | baseline, no speculation | 14.0 t/s |
-| `dflash-fp4` | agents, structured output | **65.6 t/s** (4.7x) |
-| `dflash-q8` | the same, on a stock K-quant target | 48.5 t/s |
-| `mtp-long` | long context, any task, no sidecar | 36.1 t/s at 31k |
-| `ornith-mtp` | long documents, fastest prefill | **1648 t/s** pp2048 (1.9x mainline) |
-| `marshall` | serving a coding agent's fast tier | as `dflash-fp4` |
-| `router` | a whole directory of models | — |
+| recipe | for | model | measured |
+|---|---|---|---|
+| `plain` | baseline, no speculation | anything | 14.0 t/s |
+| `dflash-fp4` | agents, structured output | **Qwen3.8-27B** + FP4 sidecar | **65.6 t/s** (4.7x) |
+| `dflash-q8` | the same, on a stock K-quant target | **Qwen3.8-27B** + Q8_0 sidecar | 48.5 t/s |
+| `mtp-long` | long context, any task, no sidecar | **Qwen3.8-27B**, or any MTP-head model | 36.1 t/s at 31k |
+| `ornith-mtp` | long documents, fastest prefill | **Ornith-1.5-35B-A3B** | **1648 t/s** pp2048 (1.9x mainline) |
+| `marshall` | serving a coding agent's fast tier | as `dflash-fp4` | as `dflash-fp4` |
+| `router` | a whole directory of models | anything | — |
+
+Two model families cover all of it — the dense **Qwen3.8-27B** for generation and
+the **Ornith-1.5-35B-A3B** MoE for prefill. Exact Hugging Face repos, and which
+sidecar pairs with which target, are in
+[RECIPES.md](RECIPES.md#the-models); everything downloads on first run.
 
 ```bash
 agention-llama run mtp-long -- -m /models/a-model-with-an-MTP-head.gguf
@@ -450,14 +457,6 @@ never enter the transfer.
 Mixing them means environment variables set on the router are inherited by every
 model instance, silently competing with the same keys in your INI. One
 configuration layer is easier to reason about than two.
-
-## Not here yet
-
-A **control panel**. One already exists — `llama-manager`, a Bun/Hono dashboard
-over INI model configs with a systemd unit — but it is unpublished, so there is
-nothing to link yet. The work is to teach it the fork's speculative-decoding
-fields (`--spec-type`, `--spec-draft-n-max`, sidecar model) and ship it as an
-optional compose service, not to write a second panel.
 
 ## Caveats
 
