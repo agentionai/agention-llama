@@ -14,7 +14,7 @@
 # are changing the fork.
 services:
   server:
-    image: ${IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:server}
+    image: ${IMAGE:-ghcr.io/agentionai/agention-llama:server}
     container_name: agention-llama
     restart: unless-stopped
     ports:

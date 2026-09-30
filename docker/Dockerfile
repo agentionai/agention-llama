@@ -86,7 +86,7 @@ ARG APP_VERSION=0
 
 LABEL org.opencontainers.image.title="agention-llama" \
       org.opencontainers.image.description="Vulkan llama.cpp fork for AMD Strix Halo — ROCmFPx quants, DFlash2/MTP speculative decoding" \
-      org.opencontainers.image.source="https://github.com/LaurentZuijdwijk/llama.cpp" \
+      org.opencontainers.image.source="https://github.com/agentionai/llama.cpp" \
       org.opencontainers.image.revision="${LLAMA_COMMIT}" \
       org.opencontainers.image.version="${APP_VERSION}" \
       org.opencontainers.image.created="${BUILD_DATE}"

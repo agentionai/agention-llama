@@ -5,7 +5,7 @@
 #   scripts/build.sh                        # server image from ../llama.cpp
 #   scripts/build.sh cli                    # cli image
 #   scripts/build.sh dist                   # portable linux x64 tarball -> ./dist
-#   scripts/build.sh server --ref master    # from a fresh clone of the fork
+#   scripts/build.sh server --ref main      # from a fresh clone of the fork
 #   LLAMA_SRC=/path/to/llama.cpp scripts/build.sh
 set -euo pipefail
 
@@ -35,7 +35,7 @@ done
 # any other checkout. Pinning by SHA is what makes an image reproducible.
 if [ -n "$REF" ]; then
     CACHE="$REPO_ROOT/.cache/llama-src"
-    FORK_URL="${FORK_URL:-https://github.com/LaurentZuijdwijk/llama.cpp.git}"
+    FORK_URL="${FORK_URL:-https://github.com/agentionai/llama.cpp.git}"
     if [ ! -d "$CACHE/.git" ]; then
         echo ">> cloning $FORK_URL"
         git clone "$FORK_URL" "$CACHE"

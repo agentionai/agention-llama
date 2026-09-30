@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # agention-llama installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/LaurentZuijdwijk/agention-llama/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/agentionai/agention-llama/main/install.sh | sh
 #
 # Clones this repo to ~/.local/share/agention-llama and links the CLI into
 # ~/.local/bin. Cloning rather than embedding is deliberate: the recipes are
@@ -12,8 +12,8 @@
 # on first use, once you have run the doctor and know the machine is set up.
 set -eu
 
-REPO="${AGENTION_REPO:-https://github.com/LaurentZuijdwijk/agention-llama.git}"
-BRANCH="${AGENTION_BRANCH:-master}"
+REPO="${AGENTION_REPO:-https://github.com/agentionai/agention-llama.git}"
+BRANCH="${AGENTION_BRANCH:-main}"
 SHARE="${AGENTION_HOME:-$HOME/.local/share/agention-llama}"
 BINDIR="${BINDIR:-$HOME/.local/bin}"
 

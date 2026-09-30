@@ -1,6 +1,6 @@
 # agention-llama
 
-Packaging for [the adaptive-speculation llama.cpp fork](https://github.com/LaurentZuijdwijk/llama.cpp):
+Packaging for [the adaptive-speculation llama.cpp fork](https://github.com/agentionai/llama.cpp):
 a container image, portable binaries, and a preflight check that tells you
 whether you are actually getting the fork's speed.
 
@@ -19,7 +19,7 @@ upstreamable fixes stay easy to send upstream.
 ## Quick start
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LaurentZuijdwijk/agention-llama/master/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/agentionai/agention-llama/main/install.sh | sh
 
 agention-llama doctor      # is this machine set up to be fast?
 agention-llama recipes     # the configurations, one per use case
@@ -51,7 +51,7 @@ Prefer not to install a script?
 docker run --rm -it --device /dev/dri \
   --group-add "$(getent group render | cut -d: -f3)" \
   -v ~/models:/models -p 8080:8080 \
-  ghcr.io/laurentzuijdwijk/agention-llama:server
+  ghcr.io/agentionai/agention-llama:server
 ```
 
 ## Why the doctor exists
@@ -83,8 +83,8 @@ quietly into ordinary decoding. That check is the draft-acceptance line, in
 
 | image | contents |
 |---|---|
-| `ghcr.io/laurentzuijdwijk/agention-llama:server` | `llama-server` + the embedded web UI, healthcheck, preflight on start |
-| `ghcr.io/laurentzuijdwijk/agention-llama:cli` | `llama`, `llama-cli`, `llama-bench`, `llama-quantize` |
+| `ghcr.io/agentionai/agention-llama:server` | `llama-server` + the embedded web UI, healthcheck, preflight on start |
+| `ghcr.io/agentionai/agention-llama:cli` | `llama`, `llama-cli`, `llama-bench`, `llama-quantize` |
 
 Both are Vulkan builds on Ubuntu 26.04 with `GGML_BACKEND_DL` and
 `GGML_CPU_ALL_VARIANTS`: the CPU variant is chosen at load time and the Vulkan
@@ -99,7 +99,7 @@ To build them yourself from a fork checkout:
 ```bash
 ./scripts/build.sh server              # from ../llama.cpp (or $LLAMA_SRC)
 ./scripts/build.sh cli
-./scripts/build.sh server --ref master # from a fresh clone of the fork, pinned
+./scripts/build.sh server --ref main   # from a fresh clone of the fork, pinned
 ```
 
 `--ref` takes any git ref; pin a SHA when you want a reproducible image. The
@@ -109,7 +109,7 @@ stamps the commit into the image labels and `/app/BUILD_INFO`.
 ### Prebuilt binaries
 
 No Docker, no compiler. Attached to the fork's
-[releases page](https://github.com/LaurentZuijdwijk/llama.cpp/releases):
+[releases page](https://github.com/agentionai/llama.cpp/releases):
 
 | | |
 |---|---|

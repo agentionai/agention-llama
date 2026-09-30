@@ -25,8 +25,8 @@ while [ -L "$self" ]; do
 done
 ROOT=$(cd -P "$(dirname "$self")/.." && pwd)
 
-IMAGE="${IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:server}"
-CLI_IMAGE="${CLI_IMAGE:-ghcr.io/laurentzuijdwijk/agention-llama:cli}"
+IMAGE="${IMAGE:-ghcr.io/agentionai/agention-llama:server}"
+CLI_IMAGE="${CLI_IMAGE:-ghcr.io/agentionai/agention-llama:cli}"
 NAME="${NAME:-agention-llama}"
 PORT="${PORT:-8080}"
 MODELS="${MODELS_DIR:-$HOME/models}"
@@ -64,7 +64,7 @@ pick_backend() {
     if have_docker; then printf 'docker'
     elif native_bin llama-server >/dev/null; then printf 'native'
     else die "no backend: install Docker, or the binaries from
-    https://github.com/LaurentZuijdwijk/llama.cpp/releases"
+    https://github.com/agentionai/llama.cpp/releases"
     fi
 }
 
@@ -270,7 +270,7 @@ cmd_update() {
             ;;
         native)
             die "native backend: re-run install.sh from the newest release tarball
-    https://github.com/LaurentZuijdwijk/llama.cpp/releases"
+    https://github.com/agentionai/llama.cpp/releases"
             ;;
     esac
     # A clone can also move forward; a curl install is a clone underneath.

@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       fork_ref:
-        description: 'Ref of LaurentZuijdwijk/llama.cpp to build (branch, tag or SHA)'
+        description: 'Ref of agentionai/llama.cpp to build (branch, tag or SHA)'
         required: true
-        default: master
+        default: main
       push:
         description: 'Push to GHCR, not only build'
         required: true
@@ -23,8 +23,8 @@ on:
 env:
   REGISTRY: ghcr.io
   # Lowercase: GHCR rejects uppercase path components, and the owner is not.
-  IMAGE_NAME: ghcr.io/laurentzuijdwijk/agention-llama
-  FORK_REPO: LaurentZuijdwijk/llama.cpp
+  IMAGE_NAME: ghcr.io/agentionai/agention-llama
+  FORK_REPO: agentionai/llama.cpp
 
 permissions:
   contents: read
@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: ${{ env.FORK_REPO }}
-          ref: ${{ inputs.fork_ref || 'master' }}
+          ref: ${{ inputs.fork_ref || 'main' }}
           path: .llamasrc
           fetch-depth: 0
 
