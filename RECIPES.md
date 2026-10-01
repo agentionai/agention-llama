@@ -48,7 +48,7 @@ experts that only this fork can run; it drafts against its own MTP head, shipped
 | role | Hugging Face repo | notes |
 |---|---|---|
 | target | `agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Gyro-S` | 58.5 GB download, 28.8 GiB GPU at 64k; mainline cannot load it |
-| MTP draft | same repo, `mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf` | 2.7 GB; fetched by `-hf` automatically |
+| MTP draft | same repo, `mtp-Qwen3.8-Flash-Next-draft.gguf` | 2.7 GB; fetched by `-hf` automatically |
 | vision projector | same repo, `mmproj-F16.gguf` | 0.9 GB; fetched by `-hf` automatically, `--no-mmproj` for text-only |
 
 A DFlash2 sidecar is **paired with a specific target**. The FP4 sidecar above is
@@ -312,7 +312,7 @@ is prefill. Run the MoE for prefill, the dense 27B for generation.
 | | |
 |---|---|
 | target | `agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Gyro-S` (58.5 GB) |
-| draft | same repo, `mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf` (2.7 GB) |
+| draft | same repo, `mtp-Qwen3.8-Flash-Next-draft.gguf` (2.7 GB) |
 | vision | same repo, `mmproj-F16.gguf` (0.9 GB) |
 
 ```bash
@@ -337,8 +337,10 @@ Two things make the difference over plain `mtp-long` settings: a 4-bit draft (sa
 (`--spec-draft-p-min 0.5`) made prose *slower* here: on this backend a verify of two tokens costs more than one
 decode step, so short drafting rounds do not pay.
 
-**Memory:** 28.8 GiB at 64k without the draft; the draft adds about 3 GiB. On a 32 GB card with drafting,
-set `LLAMA_ARG_CTX_SIZE=32768`. Prefill is 250 t/s on this machine.
+**Memory:** 28.8 GiB at 64k without the draft; the draft adds 3.75 GiB (measured) and vision about 1 GiB. On one
+32 GB card the draft does not fit next to Gyro-S: run it on a second GPU or on the CPU
+(`LLAMA_ARG_N_GPU_LAYERS_DRAFT=0`), or drop drafting. Prefill is 250 t/s on this machine; one R9700 32 GB does
+1,246 t/s prefill and 58 t/s decode.
 
 ---
 
