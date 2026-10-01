@@ -40,7 +40,7 @@ Run the doctor first. It takes a second and answers the question that matters:
   ok  RADV 26.0 >= 25.3 — LDS stride fix active (pad 2, ~+12-14% prefill)
 ```
 
-**[RECIPES.md](RECIPES.md) is the part most people want**: seven configurations,
+**[RECIPES.md](RECIPES.md) is the part most people want**: eight configurations,
 what each one needs, what it was measured at, and how to tell it engaged.
 `plain` runs anything and is the baseline. The speculative recipes are where the
 4.7x lives, but each assumes something about the model you serve.
@@ -141,7 +141,7 @@ oldest glibc that still builds the tree.
 
 ### Recipes
 
-Seven configurations, one per situation — see **[RECIPES.md](RECIPES.md)** for
+Eight configurations, one per situation — see **[RECIPES.md](RECIPES.md)** for
 the full treatment.
 
 | recipe | for | model | measured |
@@ -151,11 +151,12 @@ the full treatment.
 | `dflash-q8` | the same, on a stock K-quant target | **Qwen3.8-27B** + Q8_0 sidecar | 48.5 t/s |
 | `mtp-long` | long context, any task, no sidecar | **Qwen3.8-27B**, or any MTP-head model | 36.1 t/s at 31k |
 | `ornith-mtp` | long documents, fastest prefill | **Ornith-1.5-35B-A3B** | **1648 t/s** pp2048 (1.9x mainline) |
+| `gyro` | a 126B MoE on one 32 GB GPU | **Qwen3.8-Flash-Next Gyro-S** | 32 → **58** t/s on JSON, 39 on prose |
 | `marshall` | serving a coding agent's fast tier | as `dflash-fp4` | as `dflash-fp4` |
 | `router` | a whole directory of models | anything | — |
 
-Two model families cover all of it — the dense **Qwen3.8-27B** for generation and
-the **Ornith-1.5-35B-A3B** MoE for prefill. Exact Hugging Face repos, and which
+Three model families cover all of it — the dense **Qwen3.8-27B** for generation,
+the **Ornith-1.5-35B-A3B** MoE for prefill, and **Qwen3.8-Flash-Next Gyro** for a 126B MoE on one 32 GB GPU. Exact Hugging Face repos, and which
 sidecar pairs with which target, are in
 [RECIPES.md](RECIPES.md#the-models); everything downloads on first run.
 
@@ -430,7 +431,7 @@ fights the design rather than helping it.
 ```
 bin/agention-llama     the one command: doctor, recipes, run, serve, update
 install.sh             curl | sh installer — clones this repo, links the CLI
-RECIPES.md             seven configurations, what each needs, what it measured
+RECIPES.md             eight configurations, what each needs, what it measured
 docker/Dockerfile      all image targets + the portable-binary stage
 docker-compose.yml     long-lived server, pulls the published image
 docker-compose.build.yml  override that builds from a fork checkout instead

@@ -1,6 +1,6 @@
 # Recipes
 
-Seven configurations, one per situation. Each names the model it needs, the
+Eight configurations, one per situation. Each names the model it needs, the
 command to run it, and how to tell it actually engaged — because a speculative
 preset that doesn't match your model degrades **quietly** into ordinary decoding
 rather than failing.
@@ -16,12 +16,13 @@ not measured there.
 | [`dflash-q8`](#dflash-q8) | the same, on a stock K-quant target | **Qwen3.8-27B** (any quant) + Q8_0 sidecar | 48.5 t/s |
 | [`mtp-long`](#mtp-long) | long context, any task, no sidecar | **Qwen3.8-27B** ROCmFP4-FAST, or any model with an MTP head | 36.1 t/s at 31k |
 | [`ornith-mtp`](#ornith-mtp) | long documents, fastest prefill | **Ornith-1.5-35B-A3B** Q4_K_M | **1648 t/s pp2048** |
+| [`gyro`](#gyro) | a 126B MoE on one 32 GB GPU | **Qwen3.8-Flash-Next Gyro-S** + its MTP draft | 32 → **58 t/s** JSON, 39 prose |
 | [`marshall`](#marshall) | a coding agent's fast tier | **Qwen3.8-27B** ROCmFP4-FAST + FP4 sidecar | as `dflash-fp4` |
 | [`router`](#router) | serving a whole directory of models | anything | — |
 
 ## The models
 
-Two model families cover every recipe here. Both are downloaded on first run by
+Three model families cover every recipe here. Both are downloaded on first run by
 `-hf`, into your models directory — you do not have to fetch them by hand.
 
 **Qwen3.8-27B** — dense, and the target for every generation recipe. It carries
@@ -40,6 +41,15 @@ drafts against its own MTP head.
 | role | Hugging Face repo |
 |---|---|
 | target | `ornith-ai/Ornith-1.5-35B-A3B-GGUF:Q4_K_M` |
+
+**Qwen3.8-Flash-Next (Gyro)** — 126B MoE, and the single-GPU big-model recipe. Rotor-coded
+experts that only this fork can run; it drafts against its own MTP head, shipped in the same repo.
+
+| role | Hugging Face repo | notes |
+|---|---|---|
+| target | `agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Gyro-S` | 58.5 GB download, 28.8 GiB GPU at 64k; mainline cannot load it |
+| MTP draft | same repo, `mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf` | 2.7 GB; fetched by `-hf` automatically |
+| vision projector | same repo, `mmproj-F16.gguf` | 0.9 GB; fetched by `-hf` automatically, `--no-mmproj` for text-only |
 
 A DFlash2 sidecar is **paired with a specific target**. The FP4 sidecar above is
 trained against Qwen3.8-27B and is useless against anything else — it will draft
@@ -290,6 +300,45 @@ regression into the fastest setting available. Do not generalise it — the dens
 draft length landed upstream and works there; that figure belongs to the model
 and to Strix Halo's bandwidth, not to this fork. What this fork adds on Ornith
 is prefill. Run the MoE for prefill, the dense 27B for generation.
+
+---
+
+## `gyro`
+
+**For:** a 126B mixture-of-experts on one 32 GB GPU — coding, agentic work and long reasoning.
+
+**Needs:** **Qwen3.8-Flash-Next Gyro-S**:
+
+| | |
+|---|---|
+| target | `agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Gyro-S` (58.5 GB) |
+| draft | same repo, `mtp-Qwen3.8-Flash-Next-Q4_K_M.gguf` (2.7 GB) |
+| vision | same repo, `mmproj-F16.gguf` (0.9 GB) |
+
+```bash
+agention-llama run gyro -- -hf agentionai/Qwen3.8-Flash-Next-Gyro-GGUF:Gyro-S
+```
+
+`-hf` fetches the target, the MTP draft (by its `mtp-` name) and the vision projector in one go. Images work
+out of the box; add `--no-mmproj` after `--` to run text-only and keep about 1 GiB of GPU memory. The 26.8 GB
+n-gram table inside the target stays on disk (`--ngram-on-disk`).
+
+**Measured**, Radeon 8060S, greedy, 384 tokens, reasoning off:
+
+| | prose | JSON | code | copy |
+|---|---:|---:|---:|---:|
+| bare decode | 32.3 | 32.2 | 32.0 | 32.2 |
+| MTP, Q8_0 draft, `n-max 4` | 38.2 | 51.3 | 49.0 | 55.8 |
+| **this recipe** | **38.7** | **57.7** | **51.5** | **61.1** |
+
+Two things make the difference over plain `mtp-long` settings: a 4-bit draft (same acceptance as Q8_0,
+1.4 GB smaller) and `--spec-draft-mtp-vocab 32768`, which scores the draft over a 32k-token vocabulary subset
+(draft step 4.3 → 1.6 ms; verification still uses the full vocabulary). A probability cutoff
+(`--spec-draft-p-min 0.5`) made prose *slower* here: on this backend a verify of two tokens costs more than one
+decode step, so short drafting rounds do not pay.
+
+**Memory:** 28.8 GiB at 64k without the draft; the draft adds about 3 GiB. On a 32 GB card with drafting,
+set `LLAMA_ARG_CTX_SIZE=32768`. Prefill is 250 t/s on this machine.
 
 ---
 
