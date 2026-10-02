@@ -337,6 +337,9 @@ Two things make the difference over plain `mtp-long` settings: a 4-bit draft (sa
 (`--spec-draft-p-min 0.5`) made prose *slower* here: on this backend a verify of two tokens costs more than one
 decode step, so short drafting rounds do not pay.
 
+**Two GPUs:** keep the model on one card and the draft on the other (`-- --device Vulkan0 --device-draft Vulkan1`).
+Splitting layers across cards makes them take turns: one R9700 decodes 57.8 t/s, two with a layer split 37.6.
+
 **Memory:** 28.8 GiB at 64k without the draft; the draft adds 3.75 GiB (measured) and vision about 1 GiB. On one
 32 GB card the draft does not fit next to Gyro-S: run it on a second GPU or on the CPU
 (`LLAMA_ARG_N_GPU_LAYERS_DRAFT=0`), or drop drafting. Prefill is 250 t/s on this machine; one R9700 32 GB does
